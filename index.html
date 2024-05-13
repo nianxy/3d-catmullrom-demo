@@ -20,10 +20,11 @@
 <div id="container"></div>
 <script src="./assets/three.js"></script>
 <script src="./assets/GLTFLoader.js"></script>
-<script src="./assets/index.js"></script>
-<script>
-  const container = document.getElementById('container');
-  new Demo(container).run();
+<script src="./assets/tween.umd.js"></script>
+<script type="module">
+import { Demo } from './assets/index.js';
+const container = document.getElementById('container');
+new Demo(container).run();
 </script>
 </body>
 </html>

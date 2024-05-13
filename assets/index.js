@@ -17,7 +17,7 @@ export class Demo {
     const canvas = document.createElement('canvas');
 
     const rect = container.getBoundingClientRect();
-    console.log(rect);
+    // console.log(rect);
 
     canvas.width = rect.width * window.devicePixelRatio;
     canvas.height = rect.height * window.devicePixelRatio;
@@ -26,6 +26,23 @@ export class Demo {
     container.appendChild(canvas);
 
     this.canvas = canvas;
+    this.canStart = false;
+
+    canvas.addEventListener('touchstart', this.restartAnimation.bind(this));
+    window.addEventListener('keypress', key => {
+      if (key.code === 'Space') {
+        this.restartAnimation();
+      }
+    });
+
+    console.info('\n触摸屏幕或按空格键开始动画\n');
+  }
+
+  restartAnimation() {
+    console.log('restart animation');
+    this.canStart = true;
+    TWEEN.getAll().forEach(tween => TWEEN.remove(tween));
+    this.tweens = null;
   }
 
   updateCamera(camera) {
@@ -38,8 +55,8 @@ export class Demo {
           break;
         }
         const tweens = [
-          new TWEEN.Tween(cameraStart.pos).to(cameraNext.pos).onUpdate(pos=>{camera.position.copy(pos);}),
-          new TWEEN.Tween(cameraStart.rot).to(cameraNext.rot).onUpdate(rot=>{camera.quaternion.copy(rot);}),
+          new TWEEN.Tween(cameraStart.pos.clone()).to(cameraNext.pos.clone()).onUpdate(pos=>{camera.position.copy(pos);}),
+          new TWEEN.Tween(cameraStart.rot.clone()).to(cameraNext.rot.clone()).onUpdate(rot=>{camera.quaternion.copy(rot);}),
         ];
         tweens.forEach(tween => {
           tween.duration(cameraMotion.dur * 1000);
@@ -59,7 +76,9 @@ export class Demo {
       this.tweens[0].start();
       this.tweens[1].start();
     } else {
-      TWEEN.update();
+      if (this.canStart) {
+        TWEEN.update();
+      }
     }
   }
 

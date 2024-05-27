@@ -30,25 +30,27 @@
   <label for="progress">Progress</label><input type="range" id="progress" min="0" max="1" value="0" step="0.001" style="width:70%"><br>
   <button onclick="capture()">Capture</button>
   <button onclick="switchCamera()">Switch Camera</button>
-  <button onclick="pause()">Pause/Resume</button>
+  <button onclick="alignCamera()">Align Camera</button>
+  <button onclick="togglePause()">Toggle Pause</button>
 </div>
 <script src="//static.cdn.oppenlab.com/common/vconsole/3.3.4/vconsole.min.js"></script>
 <script>
   new VConsole();
 </script>
-<script src="./assets/three.js"></script>
-<script src="./assets/GLTFLoader.js"></script>
-<script src="./assets/OrbitControls.js"></script>
-<script src="./assets/tween.umd.js"></script>
+<script src="./js/three.js"></script>
+<script src="./js/GLTFLoader.js"></script>
+<script src="./js/camera/OrbitControls.js"></script>
+<script src="./js/camera/ArcballControls.js"></script>
+<script src="./js/tween.umd.js"></script>
 <script type="module">
-import { Demo } from './assets/index.js';
+import { Demo } from './js/index.js';
 const container = document.getElementById('container');
 const demo = new Demo(container);
 let paused = false;
 
 const progress = document.getElementById('progress');
 progress.addEventListener('input', function() {
-  demo.setProgress(parseFloat(progress.value));
+  demo.setProgressOutside(parseFloat(progress.value));
   // console.log(progress.value);
 });
 demo.onProgressUpdate((value, inAnimation) => {
@@ -63,9 +65,11 @@ window.capture = function() {
 window.switchCamera = function() {
   demo.switchCamera();
 }
-window.pause = function() {
-  paused = !paused;
-  demo.pause(paused);
+window.alignCamera = function() {
+  demo.alignCamera();
+}
+window.togglePause = function() {
+  demo.togglePause();
 }
 
 demo.run();

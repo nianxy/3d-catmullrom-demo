@@ -61,8 +61,10 @@ export class Demo {
 
   restartAnimation() {
     console.log('restart animation');
-    this.tween.stop();
+    this.tweenGroup.getAll().forEach(tween => tween.stop());
     this.canStart = true;
+    this.currentMotionIndex = 0;
+    this.paused = false;
     this.tween.start();
   }
 
@@ -118,37 +120,59 @@ export class Demo {
 
   gotoNode(idx) {
     console.log('go to node', idx);
+    idx--;
     this.canStart = false;
-    TWEEN.getAll().forEach(tween => TWEEN.remove(tween));
-    this.tweens = null;
-    this.tween = null;
-    const m = cameraMotions[(idx-1)*2];
-    if (m) {
-      this.renderCamera.position.set(m.pos[0], m.pos[1], m.pos[2]);
-      this.renderCamera.lookAt(0, 0, 0);
+    this.tweenGroup.getAll().forEach(tween => tween.stop());
+    let n = 0;
+    for (let i=0; i<cameraMotions.length; ++i) {
+      if (idx>=n && idx<=n+cameraMotions[i].length/2) {
+        // console.log('in scope', idx, n, i);
+        const m = cameraMotions[i][(idx-n)*2];
+        if (m) {
+          this.renderCamera.position.set(m.pos[0], m.pos[1], m.pos[2]);
+          this.renderCamera.quaternion.set(m.rot[0], m.rot[1], m.rot[2], m.rot[3]);
+        }
+      }
+      n += Math.floor(cameraMotions[i].length/2);
     }
   }
 
   updateCameraCatmullRom() {
     if (!this.canStart) return;
-    TWEEN.update();
+    this.tweenGroup.update();
   }
 
-  setProgress(progress, inAnimation) {
-    const p = this.catmullRom.getPoint(progress);
+  _setProgress(t, inAnimation) {
+    // console.log('t', t.toFixed(3));
+    
+    const p = this.catmullRoms[this.currentMotionIndex].getPoint(t);
     this.camera2.position.copy(p);
-    this.camera2.lookAt(0, 0, 0);
+
+    // update camera rotation
+    const q0 = this.cameraQuats[this.currentMotionIndex][this.currentTweenIndex];
+    const q1 = this.cameraQuats[this.currentMotionIndex][this.currentTweenIndex+1];
+    const p0 = this.cameraPoints[this.currentMotionIndex][this.currentTweenIndex];
+    const p1 = this.cameraPoints[this.currentMotionIndex][this.currentTweenIndex+1];
+    const d1 = p.distanceTo(p0);
+    const d2 = p.distanceTo(p1);
+    const tt = d1 / (d1 + d2);
+    this.camera2.quaternion.slerpQuaternions(q0, q1, tt);
+    
     this.camera2.updateProjectionMatrix();
     this.helper.update();
-    this.onProgressUpdateCallback?.(progress, !!inAnimation);
+    this.onProgressUpdateCallback?.(t, !!inAnimation);
+  }
+
+  setProgressOutside(t) {
+    this._setProgress(t, false);
   }
 
   captureCameraParams() {
     let pos = new THREE.Vector3();
     let quat = new THREE.Quaternion();
     let sacle = new THREE.Vector3();
-    this.camera1.matrixWorld.decompose(pos, quat, sacle);
-    console.log(`{ pos: [${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}], rot: [${quat.x.toFixed(2)}, ${quat.y.toFixed(2)}, ${quat.z.toFixed(2)}, ${quat.w.toFixed(2)}] }`)
+    this.renderCamera.matrixWorld.decompose(pos, quat, sacle);
+    console.log(`{ pos: [${pos.x}, ${pos.y}, ${pos.z}], rot: [${quat.x}, ${quat.y}, ${quat.z}, ${quat.w}] }`)
   }
 
   switchCamera() {
@@ -161,11 +185,18 @@ export class Demo {
     }
   }
 
-  pause(paused) {
-    if (paused) {
+  alignCamera() {
+    this.camera1.position.copy(this.camera2.position);
+    this.camera1.quaternion.copy(this.camera2du.quaternion);
+  }
+
+  togglePause() {
+    if (!this.paused) {
       recusivePauseTween(this.tween);
+      this.paused = true;
     } else {
       recusiveResumeTween(this.tween);
+      this.paused = false;
     }
   }
 
@@ -173,15 +204,15 @@ export class Demo {
     this.onProgressUpdateCallback = callback;
   }
 
-  buildCatmullRom() {
+  buildCatmullRom(motions, motionIndex) {
     const points = [];
     const quats = [];
     const durations = [];
     const easings = [];
 
-    for (let i=0; i<cameraMotions.length; i+=2) {
-      const point = cameraMotions[i];
-      const transition = cameraMotions[i+1];
+    for (let i=0; i<motions.length; i+=2) {
+      const point = motions[i];
+      const transition = motions[i+1];
       if (!point) break;
       points.push(new THREE.Vector3().fromArray(point.pos));
       quats.push(new THREE.Quaternion(point.rot[0], point.rot[1], point.rot[2], point.rot[3]).normalize());
@@ -196,29 +227,45 @@ export class Demo {
     this.addDots(catmullRom.getPoints(200));
 
     let startPoint = 0;
-    let lastTween = null;
     for (let i=0; i<durations.length; ++i) {
       const endPoint = (i+1) / durations.length;
-      const tween = new TWEEN.Tween([startPoint]).to([endPoint])
-        .onUpdate(t=>{
-          this.setProgress(t[0], true);
+      const subTween = new TWEEN.Tween({t:startPoint}, this.tweenGroup).to({t:endPoint})
+        .onUpdate(({t})=>{
+          this._setProgress(t, true);
         });
-      tween.duration(durations[i] * 1000);
-      if (easings[i]) {
-        // console.log('easing', easings[i]);
-        tween.easing(easings[i]);
-      }
+        subTween.duration(durations[i] * 1000);
+      subTween.easing(easings[i] || TWEEN.Easing.Linear.None);
+      subTween.onStart(()=>{
+        if (i===0) {
+          this.currentMotionIndex = motionIndex;
+          console.log('motion start', motionIndex);
+        }
+        this.currentTweenIndex = i;
+        console.log('tween seg:', i);
+      });
       if (!this.tween) {
-        this.tween = tween;
-        lastTween = tween;
+        this.tween = subTween;
+        this.lastTween = subTween;
       } else {
-        lastTween.chain(tween);
-        lastTween = tween;
+        this.lastTween.chain(subTween);
+        this.lastTween = subTween;
       }
       startPoint = endPoint;
     }
 
-    this.catmullRom = catmullRom;
+    this.catmullRoms.push(catmullRom);
+    this.cameraPoints.push(points);
+    this.cameraQuats.push(quats);
+  }
+
+  buildCatmullRoms() {
+    this.tweenGroup = new TWEEN.Group();
+    this.catmullRoms = [];
+    this.cameraPoints = [];
+    this.cameraQuats = [];
+    for (let i=0; i<cameraMotions.length; ++i) {
+      this.buildCatmullRom(cameraMotions[i], i);
+    }
   }
 
   async initEngine() {
@@ -279,7 +326,8 @@ export class Demo {
     scene.add( markerMesh );
 
     // add camera control
-    const cameraControl = new THREE.OrbitControls( camera1, renderer.domElement );
+    // const cameraControl = new THREE.OrbitControls( camera1, renderer.domElement );
+    const cameraControl = new THREE.ArcballControls( camera1, renderer.domElement );
 
     this.cameraControl = cameraControl;
     this.camera1 = camera1;
@@ -292,7 +340,7 @@ export class Demo {
     this.dotMesh = dotMesh;
     this.markerMesh = markerMesh;
 
-    this.buildCatmullRom();
+    this.buildCatmullRoms();
   }
 
   async run() {
